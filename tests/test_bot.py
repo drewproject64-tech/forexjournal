@@ -48,7 +48,7 @@ class ForexJournalSmokeTests(unittest.TestCase):
         self.assertEqual(len(buttons), 3)
         self.assertEqual(
             {button.callback_data for button in buttons},
-            {"menu:new", "menu:journal", "menu:settings"},
+            {"menu:new", "menu:journal", "menu:updates"},
         )
 
     def test_all_main_menu_callbacks_are_unique_and_named(self):
@@ -56,6 +56,12 @@ class ForexJournalSmokeTests(unittest.TestCase):
         callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
         self.assertEqual(len(callbacks), len(set(callbacks)))
         self.assertTrue(all(callbacks))
+
+    def test_internal_updates_have_no_external_links(self):
+        text = " ".join(title + " " + body for title, body in bot.INTERNAL_UPDATES)
+        self.assertNotIn("http://", text.lower())
+        self.assertNotIn("https://", text.lower())
+        self.assertNotIn("t.me/", text.lower())
 
     def test_positive_price_validation_rule(self):
         self.assertGreater(float("1.0850"), 0)
@@ -67,8 +73,6 @@ class ForexJournalSmokeTests(unittest.TestCase):
             float("not-a-price")
 
     def test_journal_query_context_requires_explicit_user_id(self):
-        # Prevents the callback path from accidentally querying callback.message.from_user
-        # (the bot) instead of callback.from_user (the person using the journal).
         self.assertIn("user_id", bot.show_journal.__annotations__)
 
 
