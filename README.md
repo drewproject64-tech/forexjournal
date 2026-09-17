@@ -6,13 +6,13 @@ A Telegram-native personal trade journal for recording and reviewing your own tr
 
 1. **New Trade** — records instrument, direction, entry, exit and an optional note with validation.
 2. **My Journal** — shows saved records and basic totals for the current Telegram user.
-3. **Settings** — explains storage, privacy and what the bot does not provide.
+3. **News & Updates** — displays original in-bot trading notes and product updates directly inside Telegram.
 
-The bot is intentionally small: the main menu exposes only these three product functions.
+The main product experience stays inside Telegram. The bot does not require an external website, landing page, redirect, or external news destination for these functions.
 
 ## Commands
 
-- `/start` — open the journal and main menu. Telegram start parameters are accepted safely.
+- `/start` — open the journal and main menu. Start parameters are accepted safely without redirecting anywhere.
 - `/help` — explain the three functions and navigation.
 
 ## Configuration
@@ -46,8 +46,10 @@ docker run --rm -e BOT_TOKEN="YOUR_TOKEN" forexjournal
 
 ## Data and QA
 
-SQLite stores records against the Telegram user ID. Parameterized queries are used and user-entered text is HTML-escaped before being rendered in Telegram. Smoke tests cover database initialization, user isolation, menu callback wiring, and price validation.
+SQLite stores records against the Telegram user ID. Parameterized queries are used and user-entered text is HTML-escaped before being rendered in Telegram. Tests cover database initialization, user isolation, menu callback wiring, and price validation.
 
 ## Telegram Ads destination alignment
 
-The profile description, `/start`, menu and destination are designed to describe the same in-Telegram product. The bot does not use an external redirect as its core experience. Telegram's current Ads Guidelines require destinations to be functional, technically complete and active, with bots responding properly on mobile and desktop; they also prohibit mostly noninteractive redirect bots. Verify the current official policy before submitting an ad.
+The advertised product should describe the same experience users receive after opening the bot: a functional Telegram-native trade journal with three clear functions. The bot's News & Updates section is local content rendered by the bot itself; it does not redirect users to external websites or external news pages.
+
+Telegram's current Ads Guidelines require destinations to be functional, technically complete and active, and state that destinations must not be used only for redirecting to other landing pages. Verify the current official guidelines before submitting or changing an ad.
