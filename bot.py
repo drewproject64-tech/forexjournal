@@ -13,7 +13,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, ErrorEvent, Message
+from aiogram.types import BotCommand, CallbackQuery, ErrorEvent, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 APP_NAME = "FOREX EXPERT TRADER"
@@ -35,10 +35,22 @@ class TradeState(StatesGroup):
 
 
 INTERNAL_UPDATES = [
-    ("Journal Update", "Keep each trade record consistent: instrument, direction, entry, exit and a short note. A complete journal makes later review easier."),
-    ("Risk Review", "Before reviewing a trade, compare what you planned with what actually happened. Recording the process can help identify repeated habits."),
-    ("Trading Note", "Entry and exit prices are recorded exactly as you enter them. The journal is for record keeping and does not generate signals or forecasts."),
-    ("Product Update", "FOREX EXPERT TRADER keeps the core experience inside Telegram: record trades, review your journal, and read in-bot updates."),
+    (
+        "Journal Update",
+        "Keep each trade record consistent: instrument, direction, entry, exit and a short note. A complete journal makes later review easier.",
+    ),
+    (
+        "Risk Review",
+        "Before reviewing a trade, compare what you planned with what actually happened. Recording the process can help identify repeated habits.",
+    ),
+    (
+        "Trading Note",
+        "Entry and exit prices are recorded exactly as you enter them. The journal is for record keeping and does not generate signals or forecasts.",
+    ),
+    (
+        "Product Update",
+        "FOREX EXPERT TRADER keeps the core experience inside Telegram: record trades, review your journal, and read in-bot updates.",
+    ),
 ]
 
 
@@ -83,10 +95,10 @@ def main_menu_keyboard():
     return builder.as_markup()
 
 
-def navigation_keyboard(*, retry: str | None = None):
+def navigation_keyboard(*, retry: str | None = None, retry_callback: str | None = None):
     builder = InlineKeyboardBuilder()
     if retry:
-        callback = "menu:new" if "Trade" in retry else "menu:updates"
+        callback = retry_callback or ("menu:new" if "Trade" in retry else "menu:updates")
         builder.button(text=retry, callback_data=callback)
     builder.button(text="🏠 Main Menu", callback_data="menu:home")
     builder.adjust(1)
@@ -125,13 +137,23 @@ async def show_journal(message: Message, user_id: int) -> None:
                 "SELECT id, pair, direction, entry, exit, notes FROM trades WHERE user_id = ? ORDER BY id DESC LIMIT 10",
                 (user_id,),
             ).fetchall()
-            total = conn.execute("SELECT COUNT(*) FROM trades WHERE user_id = ?", (user_id,)).fetchone()[0]
-            buys = conn.execute("SELECT COUNT(*) FROM trades WHERE user_id = ? AND direction = 'Buy'", (user_id,)).fetchone()[0]
+            total = conn.execute(
+                "SELECT COUNT(*) FROM trades WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+            buys = conn.execute(
+                "SELECT COUNT(*) FROM trades WHERE user_id = ? AND direction = 'Buy'",
+                (user_id,),
+            ).fetchone()[0]
         finally:
             conn.close()
     except sqlite3.Error:
         logger.exception("Database error while loading journal for user %s", user_id)
-        await message.answer("I couldn't load your journal right now. Please try again.", reply_markup=navigation_keyboard(retry="🔄 Try Again"))
+        await message.answer(
+            "I couldn't load your journal right now. Please try again.",
+            reply_markup=navigation_keyboard(
+                retry="🔄 Try Again", retry_callback="menu:journal"
+            ),
+        )
         return
 
     if not rows:
@@ -142,14 +164,21 @@ async def show_journal(message: Message, user_id: int) -> None:
         return
 
     sells = total - buys
-    lines = ["<b>📊 My Journal</b>", f"Total records: <b>{total}</b> · Buy: <b>{buys}</b> · Sell: <b>{sells}</b>", ""]
+    lines = [
+        "<b>📊 My Journal</b>",
+        f"Total records: <b>{total}</b> · Buy: <b>{buys}</b> · Sell: <b>{sells}</b>",
+        "",
+    ]
     for row in rows:
         lines.append(
             f"<b>#{row['id']} {html.escape(row['pair'])}</b> · {html.escape(row['direction'])}\n"
             f"Entry: <code>{html.escape(row['entry'])}</code> → Exit: <code>{html.escape(row['exit'])}</code>\n"
             f"Note: {html.escape(row['notes'] or 'None')}"
         )
-    await message.answer("\n".join(lines), reply_markup=navigation_keyboard(retry="📝 New Trade"))
+    await message.answer(
+        "\n".join(lines),
+        reply_markup=navigation_keyboard(retry="📝 New Trade"),
+    )
 
 
 async def show_updates(message: Message) -> None:
@@ -164,7 +193,12 @@ async def show_updates(message: Message) -> None:
         lines.append(f"<b>{index}. {html.escape(title)}</b>")
         lines.append(html.escape(body))
         lines.append("")
-    await message.answer("\n".join(lines), reply_markup=navigation_keyboard(retry="🔄 Refresh Updates"))
+    await message.answer(
+        "\n".join(lines),
+        reply_markup=navigation_keyboard(
+            retry="🔄 Refresh Updates", retry_callback="menu:updates"
+        ),
+    )
 
 
 @router.message(CommandStart())
@@ -190,7 +224,9 @@ async def menu_home(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
     if callback.message:
-        await callback.message.edit_text(HOME_TEXT, reply_markup=main_menu_keyboard())
+        await callback.message.edit_text(
+            HOME_TEXT, reply_markup=main_menu_keyboard()
+        )
 
 
 @router.callback_query(F.data == "menu:new")
@@ -226,68 +262,103 @@ async def cancel_trade(callback: CallbackQuery, state: FSMContext):
     await callback.answer("Trade entry cancelled")
     await state.clear()
     if callback.message:
-        await callback.message.edit_text(HOME_TEXT, reply_markup=main_menu_keyboard())
+        await callback.message.edit_text(
+            HOME_TEXT, reply_markup=main_menu_keyboard()
+        )
 
 
 @router.message(TradeState.pair)
 async def trade_pair(message: Message, state: FSMContext):
     value = (message.text or "").strip()
     if not value:
-        await message.answer("That input is empty. Please enter a pair or instrument name.", reply_markup=cancel_keyboard())
+        await message.answer(
+            "That input is empty. Please enter a pair or instrument name.",
+            reply_markup=cancel_keyboard(),
+        )
         return
     if len(value) > MAX_PAIR_LENGTH:
-        await message.answer(f"Please keep the pair or instrument name to {MAX_PAIR_LENGTH} characters or fewer.", reply_markup=cancel_keyboard())
+        await message.answer(
+            f"Please keep the pair or instrument name to {MAX_PAIR_LENGTH} characters or fewer.",
+            reply_markup=cancel_keyboard(),
+        )
         return
     await state.update_data(pair=value)
     await state.set_state(TradeState.direction)
-    await message.answer("Step 2 of 5\nSend direction: <code>Buy</code> or <code>Sell</code>.", reply_markup=cancel_keyboard())
+    await message.answer(
+        "Step 2 of 5\nSend direction: <code>Buy</code> or <code>Sell</code>.",
+        reply_markup=cancel_keyboard(),
+    )
 
 
 @router.message(TradeState.direction)
 async def trade_direction(message: Message, state: FSMContext):
     value = (message.text or "").strip().lower()
     if value not in {"buy", "sell"}:
-        await message.answer("Please enter <code>Buy</code> or <code>Sell</code>.", reply_markup=cancel_keyboard())
+        await message.answer(
+            "Please enter <code>Buy</code> or <code>Sell</code>.",
+            reply_markup=cancel_keyboard(),
+        )
         return
     await state.update_data(direction=value.title())
     await state.set_state(TradeState.entry)
-    await message.answer("Step 3 of 5\nSend the entry price.\nExample: <code>1.0850</code>.", reply_markup=cancel_keyboard())
+    await message.answer(
+        "Step 3 of 5\nSend the entry price.\nExample: <code>1.0850</code>.",
+        reply_markup=cancel_keyboard(),
+    )
 
 
 @router.message(TradeState.entry)
 async def trade_entry(message: Message, state: FSMContext):
     value = (message.text or "").strip().replace(",", ".")
     if len(value) > MAX_PRICE_LENGTH:
-        await message.answer("That entry price is too long. Please enter a normal positive price.", reply_markup=cancel_keyboard())
+        await message.answer(
+            "That entry price is too long. Please enter a normal positive price.",
+            reply_markup=cancel_keyboard(),
+        )
         return
     try:
         number = float(value)
         if not number > 0:
             raise ValueError
     except (TypeError, ValueError):
-        await message.answer("That entry price is not valid. Enter a positive number, for example <code>1.0850</code>.", reply_markup=cancel_keyboard())
+        await message.answer(
+            "That entry price is not valid. Enter a positive number, for example <code>1.0850</code>.",
+            reply_markup=cancel_keyboard(),
+        )
         return
     await state.update_data(entry=value)
     await state.set_state(TradeState.exit)
-    await message.answer("Step 4 of 5\nSend the exit price.\nExample: <code>1.0900</code>.", reply_markup=cancel_keyboard())
+    await message.answer(
+        "Step 4 of 5\nSend the exit price.\nExample: <code>1.0900</code>.",
+        reply_markup=cancel_keyboard(),
+    )
 
 
 @router.message(TradeState.exit)
 async def trade_exit(message: Message, state: FSMContext):
     value = (message.text or "").strip().replace(",", ".")
     if len(value) > MAX_PRICE_LENGTH:
-        await message.answer("That exit price is too long. Please enter a normal positive price.", reply_markup=cancel_keyboard())
+        await message.answer(
+            "That exit price is too long. Please enter a normal positive price.",
+            reply_markup=cancel_keyboard(),
+        )
         return
     try:
         number = float(value)
         if not number > 0:
             raise ValueError
     except (TypeError, ValueError):
-        await message.answer("That exit price is not valid. Enter a positive number, for example <code>1.0900</code>.", reply_markup=cancel_keyboard())
+        await message.answer(
+            "That exit price is not valid. Enter a positive number, for example <code>1.0900</code>.",
+            reply_markup=cancel_keyboard(),
+        )
         return
     await state.update_data(exit=value)
     await state.set_state(TradeState.notes)
-    await message.answer("Step 5 of 5\nAdd a short note about the trade, or send <code>-</code> to skip.", reply_markup=cancel_keyboard())
+    await message.answer(
+        "Step 5 of 5\nAdd a short note about the trade, or send <code>-</code> to skip.",
+        reply_markup=cancel_keyboard(),
+    )
 
 
 @router.message(TradeState.notes)
@@ -296,27 +367,46 @@ async def trade_notes(message: Message, state: FSMContext):
     required = {"pair", "direction", "entry", "exit"}
     if not required.issubset(data):
         await state.clear()
-        await message.answer("This trade entry expired. Please start again from the main menu.", reply_markup=main_menu_keyboard())
+        await message.answer(
+            "This trade entry expired. Please start again from the main menu.",
+            reply_markup=main_menu_keyboard(),
+        )
         return
     notes = (message.text or "").strip()
     if notes == "-":
         notes = ""
     if len(notes) > MAX_NOTES_LENGTH:
-        await message.answer(f"Please keep the note to {MAX_NOTES_LENGTH} characters or fewer.", reply_markup=cancel_keyboard())
+        await message.answer(
+            f"Please keep the note to {MAX_NOTES_LENGTH} characters or fewer.",
+            reply_markup=cancel_keyboard(),
+        )
         return
     try:
         conn = db_connect()
         try:
             conn.execute(
                 "INSERT INTO trades (user_id, pair, direction, entry, exit, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (message.from_user.id, data["pair"], data["direction"], data["entry"], data["exit"], notes, datetime.now(timezone.utc).isoformat()),
+                (
+                    message.from_user.id,
+                    data["pair"],
+                    data["direction"],
+                    data["entry"],
+                    data["exit"],
+                    notes,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             conn.commit()
         finally:
             conn.close()
     except sqlite3.Error:
-        logger.exception("Database error while saving trade for user %s", message.from_user.id)
-        await message.answer("I couldn't save that trade because the journal is temporarily unavailable. Please try again.", reply_markup=navigation_keyboard(retry="📝 New Trade"))
+        logger.exception(
+            "Database error while saving trade for user %s", message.from_user.id
+        )
+        await message.answer(
+            "I couldn't save that trade because the journal is temporarily unavailable. Please try again.",
+            reply_markup=navigation_keyboard(retry="📝 New Trade"),
+        )
         return
     await state.clear()
     await message.answer(
@@ -333,7 +423,10 @@ async def trade_notes(message: Message, state: FSMContext):
 @router.message()
 async def fallback(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("I didn't recognize that message. Please choose one of the three options below.", reply_markup=main_menu_keyboard())
+    await message.answer(
+        "I didn't recognize that message. Please choose one of the three options below.",
+        reply_markup=main_menu_keyboard(),
+    )
 
 
 @router.error()
@@ -342,25 +435,51 @@ async def error_handler(event: ErrorEvent):
     if isinstance(exception, TelegramAPIError):
         logger.error("Telegram API error: %s", exception)
     else:
-        logger.error("Unhandled bot error: %s", exception, exc_info=(type(exception), exception, exception.__traceback__))
+        logger.error(
+            "Unhandled bot error: %s",
+            exception,
+            exc_info=(type(exception), exception, exception.__traceback__),
+        )
     return True
 
 
 async def main() -> None:
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
     token = os.getenv("BOT_TOKEN")
     if not token:
         raise RuntimeError("BOT_TOKEN environment variable is required")
+
     init_db()
     logger.info("Database initialized at %s", DB_PATH)
-    bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+
+    bot = Bot(
+        token=token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
     dp = Dispatcher()
     dp.include_router(router)
-    await bot.set_my_commands([("start", "Open the journal"), ("help", "How the journal works")])
-    await bot.set_my_short_description("Telegram-native trade journal with in-bot news and updates.")
-    await bot.set_my_description("FOREX EXPERT TRADER is a Telegram-native personal trade journal. Save trades, review your journal, and read original in-bot updates. The core experience stays inside Telegram and does not require an external website.")
+
+    # aiogram 3.x expects BotCommand objects (or dictionaries), not tuples.
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Open the journal"),
+            BotCommand(command="help", description="How the journal works"),
+        ]
+    )
+    await bot.set_my_short_description(
+        "Telegram-native trade journal with in-bot news and updates."
+    )
+    await bot.set_my_description(
+        "FOREX EXPERT TRADER is a Telegram-native personal trade journal. "
+        "Save trades, review your journal, and read original in-bot updates. "
+        "The core experience stays inside Telegram and does not require an external website."
+    )
     await bot.delete_webhook(drop_pending_updates=True)
     logger.info("%s starting polling", APP_NAME)
+
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
