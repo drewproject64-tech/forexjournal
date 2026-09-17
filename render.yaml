@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: forexjournal
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_PATH
+        value: /var/data/trades.db
+      - key: LOG_LEVEL
+        value: INFO
+    disk:
+      name: forexjournal-data
+      mountPath: /var/data
+      sizeGB: 1
